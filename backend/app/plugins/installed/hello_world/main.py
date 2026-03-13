@@ -1,7 +1,7 @@
 """Hello World Plugin — demonstrates hooks, filters, custom routes."""
 import random
-from backend.plugins.base_plugin import BasePlugin
-from backend.core.hooks import CoreHooks, HookPriority
+from backend.app.plugins.base_plugin import BasePlugin
+from backend.app.core.hooks import CoreHooks, HookPriority
 
 GREETINGS = ["Hello, World!", "Bonjour, le monde!", "Hola, Mundo!", "こんにちは世界",
              "Namaste Duniya!", "Ciao, Mondo!", "Olá, Mundo!"]

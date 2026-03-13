@@ -4,8 +4,8 @@ import json, logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from backend.core.config import get_settings
-from backend.core.hooks import hooks, CoreHooks
+from backend.app.core.config import get_settings
+from backend.app.core.hooks import hooks, CoreHooks
 
 logger = logging.getLogger(__name__)
 

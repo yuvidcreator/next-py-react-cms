@@ -3,9 +3,9 @@ from __future__ import annotations
 import json, importlib, importlib.util, logging, sys
 from pathlib import Path
 from fastapi import APIRouter
-from backend.plugins.base_plugin import BasePlugin, PluginManifest
-from backend.core.hooks import hooks, CoreHooks
-from backend.core.config import get_settings
+from backend.app.plugins.base_plugin import BasePlugin, PluginManifest
+from backend.app.core.hooks import hooks, CoreHooks
+from backend.app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 

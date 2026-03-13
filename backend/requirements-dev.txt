@@ -1,0 +1,41 @@
+# =============================================================================
+# PyPress CMS — Development Dependencies
+# =============================================================================
+# Installed ONLY in the development Docker stage. These tools help with:
+#   - Testing: pytest + async support + coverage + factories
+#   - Linting: ruff (replaces flake8 + isort + black)
+#   - Type checking: mypy with async stubs
+#   - Debugging: debugpy for VS Code/PyCharm remote attach
+#   - Database: factories for test data generation
+#
+# WordPress equivalent: phpunit, php-cs-fixer, debug-bar plugin
+# =============================================================================
+
+# ── Testing ──────────────────────────────────────────────────────────────
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+pytest-xdist==3.5.0
+pytest-mock==3.14.0
+factory-boy==3.3.1
+faker==33.1.0
+httpx==0.28.1
+
+# ── Linting & Formatting ────────────────────────────────────────────────
+# Ruff replaces flake8, isort, black, pyflakes, pycodestyle — all in one
+ruff==0.8.4
+
+# ── Type Checking ────────────────────────────────────────────────────────
+mypy==1.13.0
+types-redis==4.6.0.20241004
+sqlalchemy-stubs==0.4
+
+# ── Debugging ────────────────────────────────────────────────────────────
+# debugpy: VS Code / PyCharm remote debugger (attaches to port 5678)
+debugpy==1.8.9
+
+# ── Development Utilities ────────────────────────────────────────────────
+# ipython: better REPL for `make shell-backend`
+ipython==8.30.0
+# watchfiles: fast file watcher for uvicorn --reload
+watchfiles==1.0.3

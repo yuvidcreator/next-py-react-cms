@@ -1,0 +1,61 @@
+# =============================================================================
+# PyPress CMS — Testing Override
+# =============================================================================
+# Usage: docker compose -f docker-compose.yml -f docker-compose.test.yml up
+# Or:    make test  (recommended)
+#
+# Runs only the services needed for backend tests: database, Redis, and
+# backend. Uses a separate test database to avoid polluting dev data.
+#
+# WordPress equivalent: WP_TESTS_DB in WordPress's phpunit bootstrap.
+# =============================================================================
+
+services:
+
+  db:
+    environment:
+      POSTGRES_DB: pypress_test
+      POSTGRES_USER: pypress_test
+      POSTGRES_PASSWORD: pypress_test_password
+
+  redis:
+    command: >
+      redis-server
+        --appendonly no
+        --maxmemory 64mb
+        --maxmemory-policy allkeys-lru
+
+  backend:
+    build:
+      target: development
+    environment:
+      APP_ENV: testing
+      APP_DEBUG: "true"
+      DATABASE_URL: "postgresql+asyncpg://pypress_test:pypress_test_password@db:5432/pypress_test"
+      REDIS_URL: "redis://redis:6379/0"
+      APP_SECRET_KEY: test-secret-key
+      JWT_SECRET: test-jwt-secret
+      CSRF_SECRET: test-csrf-secret
+      LOG_LEVEL: WARNING
+    command: >
+      pytest
+        --tb=short
+        --strict-markers
+        -v
+        --cov=app
+        --cov-report=term-missing
+    # Tests run once and exit
+    restart: "no"
+
+  # Disable services not needed for testing
+  worker:
+    profiles: ["disabled"]
+
+  frontend:
+    profiles: ["disabled"]
+
+  admin:
+    profiles: ["disabled"]
+
+  nginx:
+    profiles: ["disabled"]

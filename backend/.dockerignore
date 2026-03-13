@@ -1,0 +1,67 @@
+# =============================================================================
+# PyPress Backend — Docker Build Context Ignore
+# =============================================================================
+# Files listed here are EXCLUDED from the Docker build context.
+# This serves two purposes:
+#   1. SPEED: Smaller build context = faster `docker build`
+#   2. SECURITY: Sensitive files never enter the image
+#
+# WordPress equivalent: .htaccess rules blocking access to wp-config.php,
+# but enforced at BUILD time (files never enter the container at all).
+# =============================================================================
+
+# ── Version Control ──────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+
+# ── Tests (not needed in production image) ───────────────────────────────
+tests/
+pytest.ini
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── Documentation (not needed at runtime) ────────────────────────────────
+docs/
+*.md
+LICENSE
+
+# ── IDE / Editor ─────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Python Cache ─────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.mypy_cache/
+.ruff_cache/
+
+# ── Virtual Environments ─────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── Docker (don't send Docker files into themselves) ─────────────────────
+Dockerfile
+docker-compose*.yml
+
+# ── Environment Files (NEVER put secrets in the image) ───────────────────
+.env
+.env.*
+!.env.example
+
+# ── OS Files ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Build Artifacts ──────────────────────────────────────────────────────
+dist/
+build/
+*.egg-info/

@@ -1,21 +1,64 @@
+# =============================================================================
+# PyPress CMS — Production Dependencies
+# =============================================================================
+# Every package here is required at RUNTIME in production.
+# Versions are pinned for reproducible builds (like composer.lock in PHP).
+#
+# WordPress equivalent mapping:
+#   FastAPI/Uvicorn    → WordPress core (PHP request handling)
+#   SQLAlchemy/asyncpg → WordPress $wpdb (database abstraction)
+#   Alembic            → WordPress dbDelta (schema migrations)
+#   Pydantic           → WordPress sanitize/validate functions
+#   python-jose        → WordPress auth tokens
+#   passlib/bcrypt     → WordPress wp_hash_password
+#   Celery/Redis       → WordPress wp-cron (background tasks)
+#   Pillow             → WordPress image processing (GD/Imagick)
+#   httpx              → WordPress wp_remote_get/wp_remote_post
+# =============================================================================
+
+# ── Web Framework ────────────────────────────────────────────────────────
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
+gunicorn==23.0.0
 python-multipart==0.0.19
+
+# ── Database (PostgreSQL + ORM + Migrations) ─────────────────────────────
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
 alembic==1.14.0
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+greenlet==3.1.1
+
+# ── Validation & Settings ────────────────────────────────────────────────
 pydantic==2.10.3
 pydantic-settings==2.7.0
+
+# ── Auth & Security ──────────────────────────────────────────────────────
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+
+# ── Background Tasks (wp-cron replacement) ───────────────────────────────
 celery==5.4.0
 redis==5.2.1
-python-slugify==8.0.4
+
+# ── Media Processing ─────────────────────────────────────────────────────
 Pillow==11.0.0
-aiofiles==24.1.0
+python-magic==0.4.27
+
+# ── HTTP Client (for OAuth2.0, webhooks, external API calls) ─────────────
 httpx==0.28.1
+
+# ── Utilities ────────────────────────────────────────────────────────────
+python-slugify==8.0.4
+aiofiles==24.1.0
 python-dotenv==1.0.1
+orjson==3.10.12
+
+# ── CLI ──────────────────────────────────────────────────────────────────
 click==8.1.7
 rich==13.9.4
-pytest==8.3.4
-pytest-asyncio==0.24.0
+
+# ── Logging & Monitoring ────────────────────────────────────────────────
+structlog==24.4.0
+sentry-sdk[fastapi]==2.19.2
+prometheus-fastapi-instrumentator==7.0.2

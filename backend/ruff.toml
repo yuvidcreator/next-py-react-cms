@@ -1,0 +1,57 @@
+# =============================================================================
+# PyPress CMS — Ruff Linter/Formatter Configuration
+# =============================================================================
+# Ruff replaces: flake8, isort, black, pyflakes, pycodestyle — all in one.
+# It's written in Rust and runs 10-100x faster than Python-based tools.
+#
+# WordPress equivalent: PHP_CodeSniffer with WordPress-Coding-Standards
+# =============================================================================
+
+[tool.ruff]
+# Target Python 3.12 (matches the Dockerfile base image)
+target-version = "py312"
+
+# Line length: 100 characters (a pragmatic middle ground between 80 and 120)
+line-length = 100
+
+# Files to exclude from linting
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "alembic/versions",
+    "*.pyc",
+]
+
+[tool.ruff.lint]
+# Enable these rule sets:
+#   E/W: pycodestyle errors/warnings
+#   F:   pyflakes (unused imports, undefined names)
+#   I:   isort (import sorting)
+#   N:   pep8-naming (naming conventions)
+#   UP:  pyupgrade (modernize Python syntax)
+#   B:   flake8-bugbear (common bug patterns)
+#   SIM: flake8-simplify (simplification opportunities)
+#   T20: flake8-print (no print() in production code)
+#   RET: flake8-return (return statement simplification)
+#   DTZ: flake8-datetimez (timezone-aware datetime usage)
+#   ASYNC: flake8-async (async/await best practices)
+select = ["E", "W", "F", "I", "N", "UP", "B", "SIM", "T20", "RET", "DTZ", "ASYNC"]
+
+# Rules to ignore:
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "B008",   # Do not perform function call in argument defaults (FastAPI Depends())
+    "B904",   # Use raise ... from ... (too noisy for now)
+    "SIM108", # Use ternary operator (readability preference)
+]
+
+[tool.ruff.lint.isort]
+# Import sorting: group by type, with known first-party packages
+known-first-party = ["app"]
+
+[tool.ruff.format]
+# Use double quotes (consistent with Black's default)
+quote-style = "double"
+# Indent with 4 spaces
+indent-style = "space"

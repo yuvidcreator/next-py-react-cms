@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
-from backend.core.hooks import hooks, IHookable, IActivatable
+from backend.app.core.hooks import hooks, IHookable, IActivatable
 if TYPE_CHECKING:
     from fastapi import APIRouter
 

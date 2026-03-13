@@ -1,0 +1,123 @@
+# =============================================================================
+# PyPress CMS — Development Override
+# =============================================================================
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Or:    make dev  (recommended — the Makefile handles this)
+#
+# This override adds developer-friendly features that MUST NOT exist in
+# production: host port mapping for direct service access, source code
+# volume mounts for hot reload, debug logging, and relaxed resource limits.
+#
+# WordPress equivalent: This is like running WordPress with WP_DEBUG=true,
+# SCRIPT_DEBUG=true, and accessing phpMyAdmin on the host.
+# =============================================================================
+
+services:
+
+  # ── Database: expose port to host for pgAdmin / DBeaver / CLI access ───
+  db:
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: pypress_dev_password   # Safe default for dev
+
+  # ── Redis: expose port to host for RedisInsight / CLI access ───────────
+  redis:
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+        --appendonly yes
+        --maxmemory 128mb
+        --maxmemory-policy allkeys-lru
+
+  # ── Backend: expose port + mount source for hot reload ─────────────────
+  # In dev mode, we DO expose the backend port for direct API testing with
+  # tools like Postman, Bruno, or the Swagger UI at localhost:8000/api/docs.
+  # This port MUST be removed in production (the base compose file has no
+  # port mapping for the backend).
+  backend:
+    build:
+      target: development
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: development
+      APP_DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      # Dev-safe defaults (overridden by .env if present)
+      DB_PASSWORD: pypress_dev_password
+      APP_SECRET_KEY: dev-secret-key-CHANGE-IN-PRODUCTION
+      JWT_SECRET: dev-jwt-secret-CHANGE-IN-PRODUCTION
+      CSRF_SECRET: dev-csrf-secret-CHANGE-IN-PRODUCTION
+      COOKIE_DOMAIN: localhost
+      COOKIE_SECURE: "false"
+    volumes:
+      # Mount source code for hot reload (uvicorn --reload)
+      - ./backend/app:/app/app:ro
+      - ./backend/alembic:/app/alembic:ro
+    command: >
+      uvicorn app.main:create_app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --reload-dir /app/app
+        --log-level debug
+        --factory
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "4.0"
+
+  # ── Worker: source mount + verbose logging ─────────────────────────────
+  worker:
+    build:
+      target: development
+    environment:
+      LOG_LEVEL: DEBUG
+      APP_SECRET_KEY: dev-secret-key-CHANGE-IN-PRODUCTION
+      DB_PASSWORD: pypress_dev_password
+    volumes:
+      - ./backend/app:/app/app:ro
+    command: >
+      celery -A app.celery_app worker
+        --loglevel=DEBUG
+        --concurrency=2
+        --beat
+        --scheduler=app.core.scheduler:DatabaseScheduler
+
+  # ── Frontend: expose port + mount source for HMR ───────────────────────
+  frontend:
+    build:
+      target: development
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+      INTERNAL_API_URL: "http://pypress-backend:8000"
+    volumes:
+      # Mount source for Next.js Fast Refresh
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    command: npm run dev
+
+  # ── Admin: expose port + mount source for Vite HMR ────────────────────
+  admin:
+    build:
+      target: development
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      VITE_API_BASE_URL: "http://localhost:8000"
+    volumes:
+      # Mount source for Vite Hot Module Replacement
+      - ./admin/src:/app/src
+    command: npm run dev -- --host 0.0.0.0 --port 3001
+
+  # ── Nginx: dev config with more permissive CORS ────────────────────────
+  nginx:
+    volumes:
+      - ./docker/nginx/conf.d/dev.conf:/etc/nginx/conf.d/default.conf:ro

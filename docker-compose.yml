@@ -1,47 +1,424 @@
-# version: "3.9"
+# =============================================================================
+# PyPress CMS — Docker Compose Orchestration
+# =============================================================================
+# WordPress equivalent mapping:
+#   Apache/Nginx   → nginx (reverse proxy + static files)
+#   WordPress PHP   → pypress-backend (FastAPI) — INTERNAL ONLY
+#   wp-admin        → pypress-admin (React) — behind noindex/auth
+#   Theme rendering → pypress-frontend (NextJS SSR) — PUBLIC, crawlable
+#   MySQL           → PostgreSQL 16
+#   Object Cache    → Redis 7
+#   wp-cron         → Celery worker
+#
+# SECURITY MODEL:
+#   Only Nginx port 80/443 is exposed to the host.
+#   The backend API has ZERO public exposure — no port mapping, no public network.
+#   All inter-service communication happens on Docker internal networks.
+# =============================================================================
 
+# ---------------------------------------------------------------------------
+# Networks — Three-network isolation model
+# ---------------------------------------------------------------------------
+# This is the critical security architecture. In WordPress, PHP and the
+# public-facing HTML live in the same process. In PyPress, we deliberately
+# separate them into isolated networks so the backend API can NEVER be
+# reached from the public internet.
+#
+# pypress-public:    Nginx ↔ Frontend (the only internet-facing path)
+# pypress-internal:  Backend ↔ DB ↔ Redis ↔ Worker ↔ Frontend ↔ Admin
+#                    (internal: true — Docker won't create host routes)
+# pypress-admin-net: Nginx ↔ Admin (so Nginx can proxy /admin requests)
+# ---------------------------------------------------------------------------
+networks:
+  pypress-public:
+    driver: bridge
+    name: pypress-public
+
+  pypress-internal:
+    driver: bridge
+    internal: true          # ← KEY: no host gateway, no internet access
+    name: pypress-internal
+
+  pypress-admin-net:
+    driver: bridge
+    name: pypress-admin-net
+
+# ---------------------------------------------------------------------------
+# Volumes — Persistent storage (WordPress wp-content equivalent)
+# ---------------------------------------------------------------------------
+# WordPress stores everything in wp-content/. PyPress uses named Docker
+# volumes for the same purpose, each with a clear responsibility.
+# ---------------------------------------------------------------------------
+volumes:
+  pgdata:           # PostgreSQL data — like WordPress's MySQL data directory
+    name: pypress-pgdata
+  redis-data:       # Redis persistence — like WP object cache files
+    name: pypress-redis-data
+  uploads:          # Media uploads — like wp-content/uploads/
+    name: pypress-uploads
+  plugins:          # Plugin code — like wp-content/plugins/
+    name: pypress-plugins
+  themes:           # Theme code — like wp-content/themes/
+    name: pypress-themes
+  backups:          # Automated DB backups — no WordPress equivalent (manual in WP)
+    name: pypress-backups
+  logs:             # Centralized logs — like WordPress debug.log but structured
+    name: pypress-logs
+
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
 services:
+
+  # =========================================================================
+  # DATABASE — PostgreSQL 16 (replaces WordPress's MySQL/MariaDB)
+  # =========================================================================
+  # WordPress uses MySQL with wp_ prefixed tables. PyPress uses PostgreSQL
+  # with pp_ prefixed tables and the same conceptual schema (posts, postmeta,
+  # users, usermeta, terms, options, etc.)
+  # =========================================================================
   db:
     image: postgres:16-alpine
     container_name: pypress-db
     restart: unless-stopped
+    networks:
+      - pypress-internal
     environment:
-      POSTGRES_DB: pypress
-      POSTGRES_USER: pypress
-      POSTGRES_PASSWORD: pypress_dev_password
-    ports: ["5432:5432"]
-    volumes: [pgdata:/var/lib/postgresql/data]
+      POSTGRES_DB: ${DB_NAME:-pypress}
+      POSTGRES_USER: ${DB_USER:-pypress}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      # Tuning for CMS workload (read-heavy, moderate writes)
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pypress"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-pypress} -d ${DB_NAME:-pypress}"]
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+        reservations:
+          memory: 256M
+    # NOTE: No port mapping — DB is only accessible on pypress-internal
 
+  # =========================================================================
+  # CACHE — Redis 7 (replaces WordPress object cache / transients API)
+  # =========================================================================
+  # WordPress uses transients (stored in wp_options) and optional object
+  # caching plugins. PyPress uses Redis natively for: session storage,
+  # object caching, rate limiting, and Celery task queue broker.
+  # =========================================================================
   redis:
     image: redis:7-alpine
     container_name: pypress-redis
     restart: unless-stopped
-    ports: ["6379:6379"]
+    networks:
+      - pypress-internal
+    command: >
+      redis-server
+        --appendonly yes
+        --maxmemory ${REDIS_MAXMEMORY:-256mb}
+        --maxmemory-policy allkeys-lru
+        --requirepass ${REDIS_PASSWORD:-pypress_redis_dev}
+    volumes:
+      - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-pypress_redis_dev}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+    # NOTE: No port mapping — Redis is only accessible on pypress-internal
 
+  # =========================================================================
+  # BACKEND — FastAPI (replaces WordPress PHP application)
+  # =========================================================================
+  # This is the core CMS engine. In WordPress, the PHP application handles
+  # everything. In PyPress, the FastAPI backend handles: hook system, plugin
+  # loading, theme resolution, RBAC, auth, all CRUD operations, and the
+  # REST API. It is NEVER exposed to the public internet.
+  #
+  # CRITICAL: No port mapping. No public network. Backend lives exclusively
+  # on pypress-internal. The frontend and admin reach it via Docker DNS:
+  #   http://pypress-backend:8000/api/v1/...
+  # =========================================================================
   backend:
-    build: {context: ./backend, dockerfile: Dockerfile}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: ${BACKEND_TARGET:-production}
     container_name: pypress-backend
     restart: unless-stopped
-    env_file: .env
+    networks:
+      - pypress-internal
+    # ── NO PORTS SECTION ──
+    # This is intentional. The backend must never be reachable from the host.
+    # All access goes through Docker internal networking only.
     environment:
-      DATABASE_URL: postgresql+asyncpg://pypress:pypress_dev_password@db:5432/pypress
-      REDIS_URL: redis://redis:6379/0
-    ports: ["8000:8000"]
+      # -- Application --
+      APP_NAME: ${APP_NAME:-PyPress}
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?APP_SECRET_KEY is required}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-pypress-backend}
+      # -- Database (internal Docker DNS) --
+      DATABASE_URL: "postgresql+asyncpg://${DB_USER:-pypress}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-pypress}"
+      # -- Redis (internal Docker DNS) --
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-pypress_redis_dev}@redis:6379/0"
+      # -- Auth (httpOnly cookies — never tokens in response body) --
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: ${JWT_REFRESH_TOKEN_EXPIRE_DAYS:-30}
+      CSRF_SECRET: ${CSRF_SECRET:?CSRF_SECRET is required}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-.localhost}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # -- Media uploads --
+      UPLOAD_MAX_SIZE_MB: ${UPLOAD_MAX_SIZE_MB:-64}
+      UPLOAD_DIR: /app/uploads
+      # -- Celery --
+      CELERY_BROKER_URL: "redis://:${REDIS_PASSWORD:-pypress_redis_dev}@redis:6379/1"
+      CELERY_RESULT_BACKEND: "redis://:${REDIS_PASSWORD:-pypress_redis_dev}@redis:6379/2"
+      # -- Logging --
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_DIR: /app/logs
     volumes:
-      - ./backend:/app/backend
-      - ./uploads:/app/uploads
+      - uploads:/app/uploads        # Media files (shared with nginx/frontend)
+      - plugins:/app/plugins        # Plugin code (hot-loadable)
+      - themes:/app/themes          # Theme code
+      - logs:/app/logs              # Structured log output
+      - backups:/app/backups        # DB backup destination
     depends_on:
-      db: {condition: service_healthy}
-      redis: {condition: service_healthy}
-    command: uvicorn backend.core.app:app --host 0.0.0.0 --port 8000 --reload
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # The /api/health endpoint checks DB + Redis connectivity and returns
+      # app version — similar to WordPress's Site Health check
+      test: ["CMD", "python", "-c", "import httpx; r = httpx.get('http://localhost:8000/api/health'); r.raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2.0"
+        reservations:
+          memory: 512M
 
-volumes:
-  pgdata:
+  # =========================================================================
+  # WORKER — Celery (replaces WordPress wp-cron)
+  # =========================================================================
+  # WordPress uses wp-cron which fires on page visits (unreliable for low-
+  # traffic sites). PyPress uses Celery with Redis as broker for reliable
+  # background task execution: scheduled posts, email notifications, media
+  # processing, backup jobs, plugin scheduled tasks.
+  # =========================================================================
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: ${BACKEND_TARGET:-production}
+    container_name: pypress-worker
+    restart: unless-stopped
+    networks:
+      - pypress-internal
+    # Celery worker entrypoint (overrides the default uvicorn CMD)
+    command: >
+      celery -A app.celery_app worker
+        --loglevel=${LOG_LEVEL:-INFO}
+        --concurrency=${CELERY_CONCURRENCY:-4}
+        --beat
+        --scheduler=app.core.scheduler:DatabaseScheduler
+    environment:
+      # Worker shares the same config as backend — same DB, same Redis, same secrets
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: "postgresql+asyncpg://${DB_USER:-pypress}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-pypress}"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-pypress_redis_dev}@redis:6379/0"
+      CELERY_BROKER_URL: "redis://:${REDIS_PASSWORD:-pypress_redis_dev}@redis:6379/1"
+      CELERY_RESULT_BACKEND: "redis://:${REDIS_PASSWORD:-pypress_redis_dev}@redis:6379/2"
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?APP_SECRET_KEY is required}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_DIR: /app/logs
+    volumes:
+      - uploads:/app/uploads
+      - plugins:/app/plugins
+      - themes:/app/themes
+      - logs:/app/logs
+      - backups:/app/backups
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.celery_app", "inspect", "ping", "--timeout", "10"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+        reservations:
+          memory: 256M
+
+  # =========================================================================
+  # FRONTEND — NextJS (replaces WordPress's PHP template rendering)
+  # =========================================================================
+  # In WordPress, the same PHP process renders HTML. In PyPress, NextJS
+  # handles all public-facing rendering with SSR for SEO. It fetches data
+  # from the backend over the internal network and renders HTML that search
+  # engines can crawl.
+  #
+  # Connected to BOTH pypress-public (so Nginx can reach it) and
+  # pypress-internal (so it can reach the backend API).
+  # =========================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: ${FRONTEND_TARGET:-production}
+    container_name: pypress-frontend
+    restart: unless-stopped
+    networks:
+      - pypress-public     # Nginx proxies public requests here
+      - pypress-internal   # Frontend fetches data from backend here
+    # NOTE: No host port mapping — Nginx is the sole entry point
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      # Internal API URL — resolved via Docker DNS, never exposed publicly
+      NEXT_PUBLIC_API_URL: ""
+      INTERNAL_API_URL: "http://pypress-backend:8000"
+      NEXT_PUBLIC_SITE_URL: ${SITE_URL:-http://localhost}
+      NEXT_PUBLIC_SITE_NAME: ${APP_NAME:-PyPress}
+    volumes:
+      - uploads:/app/public/uploads:ro  # Read-only access to media
+      - themes:/app/themes:ro           # Read-only access to theme templates
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz').then(r => { if (!r.ok) throw new Error(); })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+        reservations:
+          memory: 256M
+
+  # =========================================================================
+  # ADMIN — React (replaces WordPress wp-admin)
+  # =========================================================================
+  # The admin panel is the CMS management interface. It's a React SPA that
+  # communicates with the backend over the internal network. Nginx serves it
+  # at /admin with noindex/nofollow headers so search engines ignore it.
+  #
+  # Connected to BOTH pypress-admin-net (so Nginx can proxy /admin) and
+  # pypress-internal (so it can reach the backend API).
+  # =========================================================================
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+      target: ${ADMIN_TARGET:-production}
+    container_name: pypress-admin
+    restart: unless-stopped
+    networks:
+      - pypress-admin-net  # Nginx proxies /admin requests here
+      - pypress-internal   # Admin fetches data from backend here
+    # NOTE: No host port mapping — Nginx is the sole entry point
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      # The admin's API calls go through Nginx (relative path /api/v1/...)
+      # which are internally proxied to pypress-backend:8000
+      VITE_API_BASE_URL: ""
+      VITE_ADMIN_BASE_PATH: "/admin"
+      VITE_APP_NAME: ${APP_NAME:-PyPress}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/admin/healthz').then(r => { if (!r.ok) throw new Error(); })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+
+  # =========================================================================
+  # NGINX — Reverse Proxy (replaces Apache in WordPress LAMP stack)
+  # =========================================================================
+  # Nginx is the ONLY service with ports exposed to the host. It enforces:
+  #   1. Public requests → NextJS frontend
+  #   2. /admin requests → React admin (with noindex headers)
+  #   3. /api requests → 404 (blocked — API is internal only)
+  #   4. Static files → served directly from volumes
+  #   5. SSL termination (Let's Encrypt in production)
+  #
+  # This is the gateway that enforces the "backend never touches the internet"
+  # rule at the network level.
+  # =========================================================================
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: pypress-nginx
+    restart: unless-stopped
+    networks:
+      - pypress-public     # Reaches frontend
+      - pypress-admin-net  # Reaches admin
+      - pypress-internal   # Reaches backend for internal /api proxy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./docker/nginx/snippets:/etc/nginx/snippets:ro    # Reusable config fragments
+      - ./docker/nginx/ssl:/etc/nginx/ssl:ro               # SSL certs (Let's Encrypt)
+      - ./docker/certbot/www:/usr/share/nginx/certbot:ro   # ACME challenge files
+      - uploads:/usr/share/nginx/uploads:ro                # Serve media files directly
+      - logs:/var/log/nginx
+    depends_on:
+      frontend:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+        reservations:
+          memory: 64M

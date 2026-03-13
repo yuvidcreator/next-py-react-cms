@@ -1,13 +1,42 @@
-[project]
-name = "pypress"
-version = "0.1.0"
-description = "PyPress CMS — WordPress-compatible, Python-powered"
-requires-python = ">=3.11"
+# =============================================================================
+# PyPress CMS — Pytest Configuration
+# =============================================================================
+# WordPress equivalent: phpunit.xml.dist
+# =============================================================================
 
 [tool.pytest.ini_options]
+# Async mode: auto means all async test functions are automatically
+# detected and run with the asyncio event loop. No need for
+# @pytest.mark.asyncio on every test.
 asyncio_mode = "auto"
-testpaths = ["tests"]
 
-[tool.ruff]
-target-version = "py312"
-line-length = 100
+# Test file discovery patterns
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# Markers for organizing tests
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests (requires DB + Redis)",
+    "e2e: End-to-end tests (requires full stack)",
+    "slow: Tests that take more than 5 seconds",
+]
+
+# Show extra test summary info for failed, errored, and xfailed tests
+addopts = "-ra --strict-markers"
+
+# Minimum coverage percentage (fail CI if below this)
+# Start at 50% for Phase 2, increase as codebase grows
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/alembic/*",
+]
+
+[tool.coverage.report]
+fail_under = 50
+show_missing = true

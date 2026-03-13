@@ -1,0 +1,193 @@
+# =============================================================================
+# PyPress CMS — No-SSL Site Configuration (Bootstrap Mode)
+# =============================================================================
+# USE THIS when SSL certificates haven't been set up yet.
+#
+# To use this instead of the SSL config:
+#   1. Remove or rename default.conf
+#   2. Rename this file to default.conf
+#   3. Restart Nginx: docker compose restart nginx
+#
+# Once you run `make ssl-setup`, the SSL config (default.conf) takes over
+# and this file is no longer needed.
+#
+# This config has ALL the same routing and security rules as the SSL
+# version, except:
+#   - No HTTPS redirect (there's nothing to redirect to yet)
+#   - No HSTS header (can't enforce HTTPS if it doesn't exist yet)
+#   - No SSL directives
+# =============================================================================
+
+# ── WebSocket connection upgrade map ─────────────────────────────────────
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+
+    # ── Global Security Headers (minus HSTS) ─────────────────────────────
+    # We include most security headers but skip HSTS since we're on HTTP.
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+
+    # ── Rate Limiting ────────────────────────────────────────────────────
+    limit_req zone=general burst=20 nodelay;
+    limit_req_status 429;
+
+    # ── Error Pages ──────────────────────────────────────────────────────
+    error_page 404 /404;
+    error_page 500 502 503 504 /500;
+
+    # ── Let's Encrypt ACME Challenge ─────────────────────────────────────
+    location /.well-known/acme-challenge/ {
+        root /usr/share/nginx/certbot;
+        allow all;
+    }
+
+    # ── PUBLIC: Main catch-all → NextJS Frontend ─────────────────────────
+    location / {
+        include /etc/nginx/snippets/proxy-params.conf;
+        include /etc/nginx/snippets/websocket-upgrade.conf;
+        proxy_pass http://frontend_upstream;
+
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+    }
+
+    # ── PUBLIC: NextJS Static Assets ─────────────────────────────────────
+    location /_next/static/ {
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://frontend_upstream;
+        expires 365d;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        access_log off;
+    }
+
+    location /_next/image {
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://frontend_upstream;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000";
+    }
+
+    # ── PUBLIC: SEO Routes ───────────────────────────────────────────────
+    location = /sitemap.xml {
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://frontend_upstream;
+        expires 1h;
+    }
+
+    location = /robots.txt {
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://frontend_upstream;
+        expires 1d;
+    }
+
+    location /feed {
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://frontend_upstream;
+        expires 1h;
+    }
+
+    location = /favicon.ico {
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://frontend_upstream;
+        expires 30d;
+        access_log off;
+    }
+
+    # ── ADMIN: Login (rate-limited) ──────────────────────────────────────
+    location = /admin/login {
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://admin_upstream;
+
+        limit_req zone=login burst=3 nodelay;
+        limit_req_status 429;
+
+        add_header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+    }
+
+    # ── ADMIN: Static Assets ─────────────────────────────────────────────
+    location /admin/assets/ {
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://admin_upstream;
+        expires 365d;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header X-Robots-Tag "noindex, nofollow" always;
+        access_log off;
+    }
+
+    # ── ADMIN: General ───────────────────────────────────────────────────
+    location /admin {
+        include /etc/nginx/snippets/proxy-params.conf;
+        include /etc/nginx/snippets/websocket-upgrade.conf;
+        proxy_pass http://admin_upstream;
+
+        add_header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate" always;
+        add_header Pragma "no-cache" always;
+        expires -1;
+    }
+
+    # ── API: HARD BLOCK ──────────────────────────────────────────────────
+    location /api {
+        access_log /var/log/nginx/blocked-api.log main;
+        return 404;
+    }
+
+    # ── Internal API Proxy (admin browser requests only) ─────────────────
+    location /internal-api/ {
+        valid_referers server_names ~*/admin;
+        if ($invalid_referer) {
+            return 404;
+        }
+
+        limit_req zone=api burst=50 nodelay;
+        rewrite ^/internal-api/(.*) /api/$1 break;
+
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://backend_upstream;
+
+        add_header Cache-Control "no-store" always;
+        proxy_pass_header Set-Cookie;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        client_max_body_size 64M;
+    }
+
+    # ── STATIC: Media Uploads ────────────────────────────────────────────
+    location /uploads/ {
+        alias /usr/share/nginx/uploads/;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000";
+        add_header Access-Control-Allow-Origin "*";
+
+        location ~* \.(php|py|sh|bash|cgi|pl|rb)$ {
+            deny all;
+            return 404;
+        }
+
+        location ~* \.(jpg|jpeg|png|gif|webp|avif|svg|ico|mp4|webm|ogg|mp3|wav|pdf|doc|docx|xls|xlsx|ppt|pptx|zip|gz|tar|txt|csv|json|xml|woff|woff2|ttf|eot|css|js)$ {
+            try_files $uri =404;
+        }
+
+        access_log off;
+    }
+
+    # ── BLOCKED: Sensitive paths ─────────────────────────────────────────
+    location ~ /\. { deny all; return 404; access_log off; }
+    location ~* ^/(wp-admin|wp-login\.php|wp-content|wp-includes|xmlrpc\.php|wp-json) { return 404; access_log off; }
+    location ~* ^/(administrator|joomla|drupal|typo3|magento) { return 404; access_log off; }
+    location ~* \.(bak|backup|old|orig|save|swp|tmp|sql|dump)$ { deny all; return 404; }
+    location ~* \.(py|pyc|pyo|env|ini|conf|cfg|yml|yaml|toml|log)$ { deny all; return 404; }
+}
