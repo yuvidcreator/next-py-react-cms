@@ -1,0 +1,16 @@
+{
+    "name": "Hello World",
+    "slug": "hello_world",
+    "version": "1.0.0",
+    "author": "PyPress Team",
+    "description": "Example plugin demonstrating the PyPress plugin API.",
+    "entry_point": "main:HelloWorldPlugin",
+    "dependencies": [],
+    "has_admin": false,
+    "settings_schema": {
+        "greeting": {
+            "type": "string",
+            "default": "Hello, World!"
+        }
+    }
+}

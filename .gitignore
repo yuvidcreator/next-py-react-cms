@@ -1,0 +1,49 @@
+# Environment & Secrets
+.env
+.env.local
+.env.production
+*.pem
+*.key
+
+# Python
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+**/versions/
+
+# Node.js
+node_modules/
+.next/
+out/
+.turbo/
+dist/
+*.tsbuildinfo
+
+# Docker
+docker-compose.override.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Monitoring Data
+monitoring/grafana/data/
+monitoring/prometheus/data/
+
+# Logs & Dumps
+logs/
+*.log
+*.sql.gz
+*.dump

@@ -1,0 +1,75 @@
+{
+  "name": "Developer Default",
+  "slug": "developer_default",
+  "version": "1.0.0",
+  "author": "PyPress Team",
+  "description": "Default PyPress theme — clean, modern, customizable.",
+  "theme_supports": [
+    "post-thumbnails",
+    "custom-logo",
+    "title-tag",
+    "block-editor",
+    "dark-mode"
+  ],
+  "widget_areas": [
+    {
+      "id": "sidebar-primary",
+      "name": "Primary Sidebar",
+      "description": "Main sidebar."
+    },
+    {
+      "id": "footer-1",
+      "name": "Footer Column 1",
+      "description": "First footer column."
+    },
+    {
+      "id": "footer-2",
+      "name": "Footer Column 2",
+      "description": "Second footer column."
+    },
+    {
+      "id": "footer-3",
+      "name": "Footer Column 3",
+      "description": "Third footer column."
+    }
+  ],
+  "menu_locations": [
+    {
+      "slug": "primary",
+      "name": "Primary Navigation"
+    },
+    {
+      "slug": "footer",
+      "name": "Footer Navigation"
+    }
+  ],
+  "template_hierarchy": {
+    "index": "Index",
+    "single": "Single",
+    "page": "Page",
+    "archive": "Archive",
+    "category": "Category",
+    "tag": "Tag",
+    "author": "Author",
+    "search": "Search",
+    "front_page": "Home",
+    "404": "NotFound"
+  },
+  "settings_schema": {
+    "primary_color": {
+      "type": "color",
+      "default": "#2563eb",
+      "label": "Primary Color"
+    },
+    "sidebar_position": {
+      "type": "select",
+      "default": "right",
+      "options": [
+        "left",
+        "right",
+        "none"
+      ],
+      "label": "Sidebar Position"
+    }
+  }
+}
