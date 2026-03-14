@@ -4,10 +4,10 @@ from typing import Any
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from backend.core.models.post import Post, PostMeta
-from backend.core.models.taxonomy import TermRelationship, TermTaxonomy, Term
-from backend.core.repositories.base import BaseRepository
-from backend.core.hooks import hooks, CoreHooks
+from backend.app.core.models.post import Post, PostMeta
+from backend.app.core.models.taxonomy import TermRelationship, TermTaxonomy, Term
+from backend.app.core.repositories.base import BaseRepository
+from backend.app.core.hooks import hooks, CoreHooks
 
 
 class PostRepository(BaseRepository[Post]):

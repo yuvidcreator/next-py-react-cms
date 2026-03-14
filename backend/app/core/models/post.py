@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, Index, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from backend.core.database import Base
-from backend.core.models.base import TimestampMixin, SlugMixin
+from backend.app.core.database import Base
+from backend.app.core.models.base import TimestampMixin, SlugMixin
 
 
 class Post(Base, TimestampMixin, SlugMixin):

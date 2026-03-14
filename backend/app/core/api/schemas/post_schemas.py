@@ -1,47 +1,92 @@
-"""Post API Schemas — Pydantic models for request/response validation."""
-from __future__ import annotations
-from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+"""
+PyPress — Post API Schemas
 
+Pydantic models for Posts REST API request/response validation.
+These cover every field WordPress's WP_Post has, organized by use case:
+
+    CreatePostRequest  → POST /api/v1/posts (new post from editor)
+    UpdatePostRequest  → PATCH /api/v1/posts/:id (edit existing post)
+    PostResponse       → GET /api/v1/posts/:id (full post data)
+    PostListQuery      → GET /api/v1/posts?... (WP_Query params)
+    PostListResponse   → Paginated list of PostResponse items
+    BulkActionRequest  → POST /api/v1/posts/bulk (bulk publish/draft/trash)
+
+WordPress equivalent: There are no formal schemas in WordPress — PHP
+reads $_POST directly. Pydantic gives us automatic validation, OpenAPI
+docs, and type safety that catches bugs before they reach the database.
+"""
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+from typing import Any
+
+
+# ── Request Schemas ──────────────────────────────────────────────────────
 
 class CreatePostRequest(BaseModel):
+    """POST /api/v1/posts — create a new post or page."""
     title: str = Field(..., min_length=1, max_length=500)
-    content: str = Field(default="")
-    excerpt: str = Field(default="")
-    slug: str = Field(default="", max_length=200)
-    status: str = Field(default="draft")
-    post_type: str = Field(default="post")
+    slug: str | None = Field(None, max_length=200, description="URL slug — auto-generated from title if omitted")
+    content: str = ""
+    excerpt: str = ""
+    status: str = Field("draft", description="publish | draft | pending | private | future")
+    post_type: str = Field("post", description="post | page | attachment | custom type")
+    author_id: int | None = None
+    featured_image_id: int | None = None
+    category_ids: list[int] = Field(default_factory=list)
+    tag_ids: list[int] = Field(default_factory=list)
+    comment_status: str = "open"
     parent_id: int | None = None
-    comment_status: str = Field(default="open")
-    menu_order: int = Field(default=0)
-    meta: dict[str, str] = Field(default_factory=dict)
+    menu_order: int = 0
+    template: str = ""
+    published_at: str | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class UpdatePostRequest(BaseModel):
-    title: str | None = None
+    """PATCH /api/v1/posts/:id — partial update (all fields optional)."""
+    title: str | None = Field(None, min_length=1, max_length=500)
+    slug: str | None = Field(None, max_length=200)
     content: str | None = None
     excerpt: str | None = None
-    slug: str | None = None
     status: str | None = None
-    parent_id: int | None = None
+    author_id: int | None = None
+    featured_image_id: int | None = None
+    category_ids: list[int] | None = None
+    tag_ids: list[int] | None = None
     comment_status: str | None = None
+    parent_id: int | None = None
     menu_order: int | None = None
-    meta: dict[str, str] | None = None
+    template: str | None = None
+    published_at: str | None = None
+    meta: dict[str, Any] | None = None
 
 
-class AuthorEmbedded(BaseModel):
+class BulkActionRequest(BaseModel):
+    """POST /api/v1/posts/bulk — bulk operations on multiple posts."""
+    ids: list[int] = Field(..., min_length=1, description="Post IDs to act on")
+    action: str = Field(..., description="publish | draft | trash | delete")
+
+
+# ── Response Schemas ─────────────────────────────────────────────────────
+
+class PostAuthorResponse(BaseModel):
+    """Embedded author data in post responses."""
     id: int
-    username: str
     display_name: str
-    model_config = ConfigDict(from_attributes=True)
+    avatar_url: str | None = None
 
 
-class PostMetaResponse(BaseModel):
-    key: str
-    value: str | None
+class TermResponse(BaseModel):
+    """Embedded term (category/tag) data in post responses."""
+    id: int
+    name: str
+    slug: str
+    taxonomy: str
 
 
 class PostResponse(BaseModel):
+    """Full post response — returned by GET, POST, PATCH."""
     id: int
     title: str
     slug: str
@@ -49,20 +94,25 @@ class PostResponse(BaseModel):
     excerpt: str
     status: str
     post_type: str
-    author: AuthorEmbedded | None = None
-    parent_id: int | None = None
+    author: PostAuthorResponse
+    featured_image: dict | None = None
+    categories: list[TermResponse] = []
+    tags: list[TermResponse] = []
     comment_status: str
-    comment_count: int
-    menu_order: int
-    guid: str
-    meta: list[PostMetaResponse] = []
-    created_at: datetime
-    updated_at: datetime
-    model_config = ConfigDict(from_attributes=True)
+    comment_count: int = 0
+    parent_id: int | None = None
+    menu_order: int = 0
+    template: str = ""
+    published_at: str | None = None
+    created_at: str
+    updated_at: str
+    meta: dict[str, Any] = {}
 
 
 class PostListResponse(BaseModel):
-    posts: list[PostResponse]
+    """Paginated post list — returned by GET /api/v1/posts."""
+    items: list[PostResponse]
     total: int
-    pages: int
-    current_page: int
+    page: int
+    per_page: int
+    total_pages: int

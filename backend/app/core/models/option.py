@@ -2,7 +2,7 @@
 from __future__ import annotations
 from sqlalchemy import Integer, String, Text, Boolean, Index
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.core.database import Base
+from backend.app.core.database import Base
 
 
 class Option(Base):

@@ -3,10 +3,11 @@ Taxonomy Model — wp_terms + wp_term_taxonomy + wp_term_relationships.
 Three-table polymorphic design for categories, tags, and custom taxonomies.
 """
 from __future__ import annotations
+from backend.app.core.models.post import Post
 from sqlalchemy import Integer, String, Text, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from backend.core.database import Base
-from backend.core.models.base import SlugMixin
+from backend.app.core.database import Base
+from backend.app.core.models.base import SlugMixin
 
 
 class Term(Base, SlugMixin):

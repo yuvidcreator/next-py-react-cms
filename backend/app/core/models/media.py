@@ -2,8 +2,8 @@
 from __future__ import annotations
 from sqlalchemy import Integer, String, Text, ForeignKey, Index, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from backend.core.database import Base
-from backend.core.models.base import TimestampMixin
+from backend.app.core.database import Base
+from backend.app.core.models.base import TimestampMixin
 
 
 class Media(Base, TimestampMixin):

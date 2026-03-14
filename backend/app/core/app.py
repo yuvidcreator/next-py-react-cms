@@ -10,11 +10,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from backend.core.config import get_settings
-from backend.core.database import init_db, close_db
-from backend.core.hooks import hooks, CoreHooks
-from backend.core.exceptions import PyPressError
-from backend.plugins.loader import PluginLoader
+from backend.app.core.config import get_settings
+from backend.app.core.database import init_db, close_db
+from backend.app.core.hooks import hooks, CoreHooks
+from backend.app.core.exceptions import PyPressError
+from backend.app.plugins.loader import PluginLoader
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +92,8 @@ async def _lifespan(app: FastAPI):
 
 def _register_routes(app: FastAPI) -> None:
     from fastapi import APIRouter
-    from backend.core.api.v1.posts import router as posts_router
-    from backend.core.api.v1.auth import router as auth_router
+    from backend.app.core.api.v1.posts import router as posts_router
+    from backend.app.core.api.v1.auth import router as auth_router
 
     api_v1 = APIRouter(prefix="/api/v1")
     api_v1.include_router(auth_router)

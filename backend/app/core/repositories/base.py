@@ -4,7 +4,7 @@ from typing import TypeVar, Generic, Type
 from sqlalchemy import select, func, delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
-from backend.core.hooks import hooks
+from backend.app.core.hooks import hooks
 
 T = TypeVar("T", bound=DeclarativeBase)
 
