@@ -1,0 +1,110 @@
+# =============================================================================
+# PyPress CMS — Local Development (Simplified)
+# =============================================================================
+# Usage: docker compose -f docker-compose.local.yml up --build
+#
+# This is a simplified compose file for local testing that includes
+# ONLY the services needed to test the backend API and admin panel:
+#   - PostgreSQL (database)
+#   - Redis (cache/sessions)
+#   - Backend (FastAPI with hot reload)
+#
+# The admin panel runs outside Docker (yarn dev) for fastest HMR.
+# The NextJS frontend is not included (Phase 5).
+#
+# Access:
+#   Backend API:   http://localhost:8000/api/docs  (Swagger UI)
+#   Health check:  http://localhost:8000/api/health
+#   Admin panel:   http://localhost:3001/admin     (run separately with yarn dev)
+# =============================================================================
+
+services:
+
+  # ── PostgreSQL Database ────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: pypress-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pypress
+      POSTGRES_USER: pypress
+      POSTGRES_PASSWORD: pypress_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pypress -d pypress"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis Cache ────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: pypress-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    command: >
+      redis-server
+        --appendonly yes
+        --maxmemory 128mb
+        --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── FastAPI Backend (Development Mode) ─────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      target: development
+    container_name: pypress-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: development
+      APP_DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      DATABASE_URL: "postgresql+asyncpg://pypress:pypress_dev_password@db:5432/pypress"
+      REDIS_URL: "redis://redis:6379/0"
+      APP_SECRET_KEY: dev-secret-key-CHANGE-IN-PRODUCTION
+      JWT_SECRET: dev-jwt-secret-CHANGE-IN-PRODUCTION
+      CSRF_SECRET: dev-csrf-secret-CHANGE-IN-PRODUCTION
+      COOKIE_DOMAIN: ""
+      COOKIE_SECURE: "false"
+      COOKIE_SAMESITE: "lax"
+    volumes:
+      # Mount source code for hot reload
+      - ./backend/app:/app/app:ro
+    entrypoint: ["/bin/bash", "/app/scripts/entrypoint-dev.sh"]
+    command: >
+      uvicorn app.main:create_app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --reload-dir /app/app
+        --log-level debug
+        --factory
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  pgdata:
+  redisdata:

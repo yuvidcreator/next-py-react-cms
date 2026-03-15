@@ -147,6 +147,10 @@ def _register_routes(app: FastAPI) -> None:
     api_v1.include_router(plugins_router)
     api_v1.include_router(themes_router)
 
+    # Dynamic Admin Menu (Phase 4 — Task 4.4)
+    from app.core.api.v1.admin_menu import router as admin_menu_router
+    api_v1.include_router(admin_menu_router)
+
     app.include_router(api_v1)
 
     # ── Health Check ─────────────────────────────────────────────────────

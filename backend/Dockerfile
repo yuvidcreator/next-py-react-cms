@@ -38,7 +38,7 @@ FROM python:3.12-slim AS base
 LABEL maintainer="PyPress Contributors"
 LABEL org.opencontainers.image.title="PyPress Backend"
 LABEL org.opencontainers.image.description="FastAPI CMS backend — WordPress equivalent"
-LABEL org.opencontainers.image.source="https://github.com/yuvidcreator/next-py-react-cms"
+LABEL org.opencontainers.image.source="https://github.com/pypress/pypress"
 
 # ── Environment: Python Optimization ────────────────────────────────────
 # PYTHONUNBUFFERED: Don't buffer stdout/stderr — logs appear immediately
